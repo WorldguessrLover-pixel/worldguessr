@@ -1,4 +1,8 @@
+# Ignorer les fichiers contenant des infos sensibles
+.env
 __pycache__/
 *.pyc
 *.pyo
-.env
+*.pyd
+.Python
+*.db
