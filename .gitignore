@@ -1,5 +1,5 @@
 __pycache__/
 *.pyc
-*.pyo
-*.log
+.env
+venv/
 last_full.json
