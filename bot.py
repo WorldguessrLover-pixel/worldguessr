@@ -1,56 +1,41 @@
-import os
 import time
-import threading
 import requests
-from flask import Flask
-from datetime import datetime, timezone
+from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from leaderboard import fetch_leaderboard, extract_players
 
-# --- CONFIGURATION ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")  # Ton token Telegram dans Render
-CHAT_ID = os.getenv("CHAT_ID")                # ID du chat à notifier
-LEADERBOARD_URL = os.getenv("LEADERBOARD_URL")  # URL du leaderboard à surveiller
+# Mémoire des derniers elos vus
+last_elos = {}
 
-# --- FLASK APP ---
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "✅ Bot en ligne et surveille le leaderboard."
-
-@app.route("/ping")
-def ping():
-    return "pong"
-
-# --- BOT FUNCTION ---
-def check_leaderboard():
+def send_telegram_message(text):
+    """Envoie un message sur Telegram."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
     try:
-        resp = requests.get(LEADERBOARD_URL, timeout=10)
-        resp.raise_for_status()
-
-        data = resp.json()  # ← adapter selon ton leaderboard
-        message = f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] Leaderboard : {data}"
-
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": message}
-        )
-        print("✅ Message envoyé sur Telegram")
-
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"⚠️ Erreur lors du check : {e}")
+        print(f"[ERREUR] envoi Telegram : {e}")
 
-# --- BACKGROUND LOOP ---
-def loop_checker():
-    while True:
-        check_leaderboard()
-        time.sleep(180)  # 3 minutes
+def check_and_notify():
+    """Vérifie les changements d’elo et envoie les alertes."""
+    global last_elos
+    data = fetch_leaderboard()
+    players = extract_players(data)
 
-# --- MAIN ---
+    for name, elo in players:
+        if elo >= 8000:
+            previous_elo = last_elos.get(name)
+            if previous_elo is None:
+                last_elos[name] = elo
+            elif previous_elo != elo:
+                last_elos[name] = elo
+                if elo >= 10000:
+                    message = f"⚠️ Le joueur {name} est à {elo} elos et vient de changer son elo !"
+                else:
+                    message = f"Le joueur {name} est à {elo} elos et vient de changer son elo !"
+                send_telegram_message(message)
+
 if __name__ == "__main__":
-    # Thread pour le bot
-    t = threading.Thread(target=loop_checker, daemon=True)
-    t.start()
-
-    # Flask écoute sur le port fourni par Render
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    print("🚀 Bot démarré et prêt à surveiller le leaderboard...")
+    while True:
+        check_and_notify()
+        time.sleep(180)  # vérifie toutes les 3 minutes
